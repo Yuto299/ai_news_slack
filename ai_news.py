@@ -36,18 +36,22 @@ JST = timezone(timedelta(hours=9))
 FEEDS: dict[str, str] = {
     "TechCrunch": "https://techcrunch.com/category/artificial-intelligence/feed/",
     "The Verge": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
-    "VentureBeat": "https://venturebeat.com/category/ai/feed/",
+    "The Decoder": "https://the-decoder.com/feed/",
+    "Ars Technica": "https://arstechnica.com/ai/feed/",
     "MIT Technology Review": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
     "OpenAI": "https://openai.com/news/rss.xml",
     "Google AI": "https://blog.google/technology/ai/rss/",
     "Hugging Face": "https://huggingface.co/blog/feed.xml",
     "Hacker News": "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT+OR+Claude+OR+Gemini&points=100",
+    # 国内（AI 以外の記事も含むので、選定時に AI 関連に絞る）
     "ITmedia AI+": "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",
+    "ITmedia エンタープライズ": "https://rss.itmedia.co.jp/rss/2.0/enterprise.xml",
+    "日経xTECH": "https://xtech.nikkei.com/rss/index.rdf",
+    "Publickey": "https://www.publickey1.jp/atom.xml",
     # ビジネス・スタートアップ系（AI 以外の記事も含むので、選定時に AI 関連に絞る）
     "TechCrunch Startups": "https://techcrunch.com/category/startups/feed/",
     "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
     "Crunchbase News": "https://news.crunchbase.com/feed/",
-    "BRIDGE": "https://thebridge.jp/feed",
 }
 
 MODEL = "claude-opus-5-5"
@@ -102,7 +106,7 @@ def fetch_articles(lookback_hours: int, exclude_urls: set[str]) -> list[Article]
                     title=entry.get("title", "").strip(),
                     url=url,
                     published=published,
-                    summary=_strip_html(summary)[:500],
+                    summary=_strip_html(summary)[:300],
                 )
             )
             count += 1
@@ -148,13 +152,14 @@ SYSTEM_PROMPT = """あなたは AI 領域での起業を目指すエンジニア
 - 規制・訴訟など、事業環境に影響するニュース
 - 開発者が実務で使える新ツール・OSS・研究成果
 - 同じ出来事を扱う複数記事は 1 件にまとめ、最も情報量の多い記事の id を使う
-- 宣伝色が強いだけの記事や、AI と関係の薄い記事は除外（スタートアップ系メディアには AI 以外の記事も含まれる）
+- 宣伝色が強いだけの記事や、AI と関係の薄い記事は除外（スタートアップ系・国内 IT 系メディアには AI 以外の記事も多く含まれる）
 
 件数が 10 件のときのジャンル配分の目安（その日のニュース次第で ±1〜2 件は調整してよい。質の低い記事で枠を埋めない）:
-- ビジネス: 4 件（資金調達・M&A・新サービス・導入事例・市場動向。国内スタートアップの話題があれば 1 件は入れる）
+- ビジネス: 4 件（資金調達・M&A・新サービス・導入事例・市場動向）
 - モデル/製品: 3 件
 - 開発者向け / 研究: 2 件
 - 規制/社会: 1 件
+- 上記とは別軸で、10 件のうち 2 件程度は国内（日本）の話題を入れる（国内企業の AI 導入・国内スタートアップ・国内の規制動向など）
 
 要約のルール:
 - title_ja: 日本語の見出し（40 字程度まで、固有名詞は原語のままで可）

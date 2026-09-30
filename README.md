@@ -4,7 +4,7 @@
 朝と夜で同じニュースは流しません。
 
 ```
-RSS (TechCrunch / The Verge / OpenAI / Google / HN / ITmedia / Crunchbase / BRIDGE など)
+RSS (TechCrunch / The Verge / The Decoder / OpenAI / Google / HN / ITmedia / 日経xTECH / Crunchbase など)
    └─ 直近24時間の記事を収集
         └─ 過去に投稿した記事を除外
              └─ Claude が重要記事を最大10件選定 → 日本語で見出し・要約・起業家視点の示唆
