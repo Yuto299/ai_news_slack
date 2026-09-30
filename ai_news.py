@@ -200,6 +200,10 @@ def summarize(articles: list[Article], max_items: int, recent_titles: list[str])
         )
 
     # Claude Code CLI（claude -p）経由で呼ぶので、Claude のサブスクリプション枠で動く
+    env = os.environ.copy()
+    if token := env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        # ターミナルの折り返しごとコピーされた改行・空白を除去
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = "".join(token.split())
     proc = subprocess.run(
         [
             "claude", "-p",
@@ -211,6 +215,7 @@ def summarize(articles: list[Article], max_items: int, recent_titles: list[str])
             "--max-turns", "5",
         ],
         input=user_content,
+        env=env,
         capture_output=True,
         text=True,
         timeout=900,
