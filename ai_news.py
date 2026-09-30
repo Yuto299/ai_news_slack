@@ -1,16 +1,19 @@
-"""毎朝 AI 系ニュースを集めて、日本語要約 + リンク付きで Slack に投稿する。
+"""AI 系ニュースを集めて、日本語要約 + リンク付きで Slack に投稿する（朝 8:00 / 夜 20:00）。
 
 流れ:
-  1. RSS フィードから直近 N 時間の記事を収集
+  1. RSS フィードから直近 N 時間の記事を収集（過去に投稿済みの URL は除外）
   2. Claude に重要記事の選定と日本語要約を依頼（JSON で受け取る）
-  3. Slack Incoming Webhook に Block Kit で投稿
+     直近に配信済みの話題も渡し、別メディアの同じニュースを繰り返さないようにする
+  3. Slack Incoming Webhook に Block Kit で投稿し、投稿履歴を保存
 
 環境変数:
   ANTHROPIC_API_KEY   Claude API キー
   SLACK_WEBHOOK_URL   Slack Incoming Webhook URL
   LOOKBACK_HOURS      収集対象の時間幅（既定 24）
   MAX_ITEMS           投稿する記事数（既定 8）
-  POST_AT_JST         "08:30" のように指定すると、早く起動した場合その時刻まで待ってから投稿
+  EDITION             "morning" / "evening"。未指定なら現在時刻 (JST) から自動判定
+  WAIT_FOR_SLOT       "1" なら、早く起動した場合に配信時刻（8:00 / 20:00）まで待ってから投稿
+  HISTORY_FILE        投稿履歴の保存先（既定 posted_history.json）
 """
 
 from __future__ import annotations
@@ -43,6 +46,12 @@ FEEDS: dict[str, str] = {
 }
 
 MODEL = "claude-opus-5-5"
+HISTORY_DAYS = 7
+
+EDITIONS = {
+    "morning": {"label": ":sunrise: 朝のAIニュース", "post_at": "08:00"},
+    "evening": {"label": ":city_sunset: 夜のAIニュース", "post_at": "20:00"},
+}
 USER_AGENT = "Mozilla/5.0 (compatible; ai-news-slack/1.0)"
 
 
@@ -56,10 +65,10 @@ class Article:
     summary: str
 
 
-def fetch_articles(lookback_hours: int) -> list[Article]:
+def fetch_articles(lookback_hours: int, exclude_urls: set[str]) -> list[Article]:
     since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
     articles: list[Article] = []
-    seen_urls: set[str] = set()
+    seen_urls: set[str] = set(exclude_urls)
 
     for source, feed_url in FEEDS.items():
         try:
@@ -95,6 +104,26 @@ def fetch_articles(lookback_hours: int) -> list[Article]:
         print(f"[info] {source}: {count} 件", file=sys.stderr)
 
     return articles
+
+
+def load_history(path: str) -> list[dict]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)
+    return [h for h in history if datetime.fromisoformat(h["posted_at"]) >= cutoff]
+
+
+def save_history(path: str, history: list[dict], digest: dict) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    history = history + [
+        {"url": item["url"], "title_ja": item["title_ja"], "posted_at": now}
+        for item in digest["items"]
+    ]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=1)
 
 
 def _strip_html(text: str) -> str:
@@ -147,7 +176,7 @@ OUTPUT_SCHEMA = {
 }
 
 
-def summarize(articles: list[Article], max_items: int) -> dict:
+def summarize(articles: list[Article], max_items: int, recent_titles: list[str]) -> dict:
     client = anthropic.Anthropic()
     payload = [
         {
@@ -164,6 +193,12 @@ def summarize(articles: list[Article], max_items: int) -> dict:
         f"重要度の高い順に最大 {max_items} 件を選んで要約してください。\n\n"
         + json.dumps(payload, ensure_ascii=False)
     )
+    if recent_titles:
+        user_content += (
+            "\n\n以下は直近の配信で既に紹介した話題です。同じ出来事を扱う記事は選ばないでください"
+            "（続報で大きな新事実がある場合のみ可）。\n"
+            + "\n".join(f"- {t}" for t in recent_titles)
+        )
 
     response = client.beta.messages.create(
         model=MODEL,
@@ -207,14 +242,14 @@ CATEGORY_EMOJI = {
 }
 
 
-def build_blocks(digest: dict, today: datetime) -> list[dict]:
+def build_blocks(digest: dict, today: datetime, edition: str) -> list[dict]:
     weekday = "月火水木金土日"[today.weekday()]
     blocks: list[dict] = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f":newspaper: AIニュース {today:%-m/%-d}({weekday})",
+                "text": f"{EDITIONS[edition]['label']} {today:%-m/%-d}({weekday})",
             },
         },
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*{_esc(digest['headline'])}*"}},
@@ -253,6 +288,10 @@ def post_to_slack(webhook_url: str, digest: dict, blocks: list[dict]) -> None:
         raise RuntimeError(f"Slack 投稿失敗: {resp.status_code} {resp.text}")
 
 
+def detect_edition(now: datetime) -> str:
+    return "morning" if 2 <= now.hour < 14 else "evening"
+
+
 def wait_until(post_at: str) -> None:
     """起動が早すぎた場合、指定時刻 (JST) まで待つ。最大 60 分。"""
     hour, minute = map(int, post_at.split(":"))
@@ -271,24 +310,38 @@ def main() -> int:
 
     lookback = int(os.environ.get("LOOKBACK_HOURS", "24"))
     max_items = int(os.environ.get("MAX_ITEMS", "8"))
+    history_file = os.environ.get("HISTORY_FILE", "posted_history.json")
+    edition = os.environ.get("EDITION") or detect_edition(datetime.now(JST))
+    if edition not in EDITIONS:
+        raise ValueError(f"EDITION は morning / evening のいずれか: {edition}")
 
-    articles = fetch_articles(lookback)
-    print(f"[info] 合計 {len(articles)} 件取得", file=sys.stderr)
+    history = load_history(history_file)
+    posted_urls = {h["url"] for h in history}
+    print(f"[info] {edition} 版 / 投稿履歴 {len(history)} 件", file=sys.stderr)
+
+    articles = fetch_articles(lookback, posted_urls)
+    print(f"[info] 合計 {len(articles)} 件取得（投稿済みを除く）", file=sys.stderr)
     if not articles:
-        print("[warn] 記事が見つかりませんでした", file=sys.stderr)
+        print("[warn] 新しい記事が見つかりませんでした", file=sys.stderr)
         return 0
 
-    digest = summarize(articles, max_items)
-    blocks = build_blocks(digest, datetime.now(JST))
+    # 直近 2 日分（約 4 回分）の配信タイトルを渡して、同じ話題の重複を避ける
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(days=2)
+    recent_titles = [
+        h["title_ja"] for h in history if datetime.fromisoformat(h["posted_at"]) >= recent_cutoff
+    ]
+    digest = summarize(articles, max_items, recent_titles)
+    blocks = build_blocks(digest, datetime.now(JST), edition)
 
     if args.dry_run:
         print(json.dumps(digest, ensure_ascii=False, indent=2))
         return 0
 
     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
-    if post_at := os.environ.get("POST_AT_JST"):
-        wait_until(post_at)
+    if os.environ.get("WAIT_FOR_SLOT") == "1":
+        wait_until(EDITIONS[edition]["post_at"])
     post_to_slack(webhook_url, digest, blocks)
+    save_history(history_file, history, digest)
     print("[info] Slack に投稿しました", file=sys.stderr)
     return 0
 

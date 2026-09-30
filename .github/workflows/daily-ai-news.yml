@@ -2,10 +2,22 @@ name: Daily AI News to Slack
 
 on:
   schedule:
-    # 毎日 08:15 JST (= 23:15 UTC) に起動。GitHub の cron は数分〜十数分遅れることがあるため
-    # 少し早めに起動し、要約を作ってから POST_AT_JST (08:30) まで待って投稿する。
-    - cron: "15 23 * * *"
-  workflow_dispatch: {}
+    # 朝 8:00 JST / 夜 20:00 JST に配信。GitHub の cron は数分〜十数分遅れることがあるため
+    # 15 分早く起動し、要約を作ってから配信時刻まで待って投稿する（WAIT_FOR_SLOT）。
+    - cron: "45 22 * * *" # 07:45 JST → 朝版
+    - cron: "45 10 * * *" # 19:45 JST → 夜版
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "配信する版（空欄なら現在時刻から自動判定）"
+        type: choice
+        options: ["", morning, evening]
+        default: ""
+
+# 投稿履歴の保存が前後の実行と競合しないよう、同時実行は 1 つに制限
+concurrency:
+  group: ai-news
+  cancel-in-progress: false
 
 jobs:
   post:
@@ -21,10 +33,26 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      # 朝と夜で同じ記事を流さないよう、投稿履歴を実行間で引き継ぐ
+      - name: Restore posted history
+        uses: actions/cache/restore@v4
+        with:
+          path: posted_history.json
+          key: posted-history-${{ github.run_id }}
+          restore-keys: posted-history-
+
       - name: Post AI news
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          EDITION: ${{ github.event.schedule == '45 22 * * *' && 'morning' || github.event.schedule == '45 10 * * *' && 'evening' || inputs.edition }}
           # 手動実行時は待たずにすぐ投稿
-          POST_AT_JST: ${{ github.event_name == 'schedule' && '08:30' || '' }}
+          WAIT_FOR_SLOT: ${{ github.event_name == 'schedule' && '1' || '' }}
         run: python ai_news.py
+
+      - name: Save posted history
+        if: success() && hashFiles('posted_history.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: posted_history.json
+          key: posted-history-${{ github.run_id }}

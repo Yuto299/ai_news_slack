@@ -1,12 +1,15 @@
 # ai_news_slack
 
-毎朝 8:30 (JST) に、AI 系ニュースを **日本語要約 + リンク付き** で Slack に投稿するボットです。
+毎日 **朝 8:00 / 夜 20:00 (JST)** の 2 回、AI 系ニュースを **日本語要約 + リンク付き** で Slack に投稿するボットです。
+朝と夜で同じニュースは流しません。
 
 ```
 RSS (TechCrunch / The Verge / OpenAI / Google / HN / ITmedia など)
    └─ 直近24時間の記事を収集
-        └─ Claude が重要記事を最大8件選定 → 日本語で見出し・要約
-             └─ Slack Incoming Webhook で投稿
+        └─ 過去に投稿した記事を除外
+             └─ Claude が重要記事を最大8件選定 → 日本語で見出し・要約
+                  （直近に配信した話題は、別メディアの記事でも選ばない）
+                  └─ Slack Incoming Webhook で投稿 → 投稿履歴を保存
 ```
 
 GitHub Actions で動くので、サーバーは不要です。
@@ -35,16 +38,18 @@ https://console.anthropic.com/ で API キーを発行します。
 
 ### 4. 動作確認
 
-**Actions → Daily AI News to Slack → Run workflow** で手動実行すると、すぐに投稿されます。
-以降は毎朝自動で投稿されます。
+**Actions → Daily AI News to Slack → Run workflow** で手動実行すると、すぐに投稿されます
+（`edition` で朝版 / 夜版を選べます。空欄なら現在時刻から自動判定）。
+以降は毎日 朝 8:00 と夜 20:00 に自動で投稿されます。
 
-> ⚠️ スケジュール実行はデフォルトブランチ（`main`）上のワークフローでしか動きません。このブランチをマージしてから有効になります。
+> ⚠️ スケジュール実行はデフォルトブランチ（`main`）上のワークフローで動きます。
 
 ## 仕組みの補足
 
-- **投稿時刻**: GitHub Actions の cron は数分〜十数分遅れることがあるため、08:15 に起動 → 要約を作成 → 08:30 まで待ってから投稿します。混雑時は 08:30 を過ぎることがあります。
+- **投稿時刻**: GitHub Actions の cron は数分〜十数分遅れることがあるため、配信の 15 分前（7:45 / 19:45）に起動 → 要約を作成 → 8:00 / 20:00 まで待ってから投稿します。混雑時は数分遅れることがあります。
+- **朝と夜で内容を変える仕組み**: 投稿した記事の URL と見出しを `posted_history.json` に記録し（GitHub Actions のキャッシュで実行間に引き継ぎ、7 日で自動削除）、次の回では投稿済みの記事を除外します。さらに直近 2 日の配信見出しを Claude に渡し、別メディアが報じた同じニュースも選ばないようにしています。
 - **リンク**: URL は Claude の出力ではなく、元の RSS のものを使います（URL の捏造を防ぐため）。
-- **コスト目安**: 1 日 1 回、数十記事分の入力なので Claude API は 1 回あたり数円〜十数円程度です。
+- **コスト目安**: 1 日 2 回、数十記事分の入力なので Claude API は 1 回あたり数円〜十数円程度です。
 
 ## カスタマイズ
 
@@ -53,7 +58,7 @@ https://console.anthropic.com/ で API キーを発行します。
 | ニュースソースの追加・削除 | `ai_news.py` の `FEEDS` |
 | 選定基準・要約のトーン | `ai_news.py` の `SYSTEM_PROMPT` |
 | 記事数 / 収集期間 | 環境変数 `MAX_ITEMS`（既定 8） / `LOOKBACK_HOURS`（既定 24） |
-| 投稿時刻 | `.github/workflows/daily-ai-news.yml` の `cron` と `POST_AT_JST` |
+| 投稿時刻 | `.github/workflows/daily-ai-news.yml` の `cron`（2 箇所）と `ai_news.py` の `EDITIONS` |
 
 ## ローカルで試す
 
