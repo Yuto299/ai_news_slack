@@ -7,7 +7,7 @@
   3. Slack Incoming Webhook に Block Kit で投稿し、投稿履歴を保存
 
 環境変数:
-  ANTHROPIC_API_KEY   Claude API キー
+  CLAUDE_CODE_OAUTH_TOKEN  `claude setup-token` で発行したトークン（Claude のサブスク枠で実行）
   SLACK_WEBHOOK_URL   Slack Incoming Webhook URL
   LOOKBACK_HOURS      収集対象の時間幅（既定 24）
   MAX_ITEMS           投稿する記事数（既定 8）
@@ -22,12 +22,12 @@ import argparse
 import calendar
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-import anthropic
 import feedparser
 import requests
 
@@ -177,7 +177,6 @@ OUTPUT_SCHEMA = {
 
 
 def summarize(articles: list[Article], max_items: int, recent_titles: list[str]) -> dict:
-    client = anthropic.Anthropic()
     payload = [
         {
             "id": a.id,
@@ -200,27 +199,29 @@ def summarize(articles: list[Article], max_items: int, recent_titles: list[str])
             + "\n".join(f"- {t}" for t in recent_titles)
         )
 
-    response = client.beta.messages.create(
-        model=MODEL,
-        max_tokens=16000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
-        output_config={
-            "effort": "medium",
-            "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
-        },
-        # 安全性分類器による誤った拒否時は、サーバー側で推奨モデルに自動フォールバック
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
+    # Claude Code CLI（claude -p）経由で呼ぶので、Claude のサブスクリプション枠で動く
+    proc = subprocess.run(
+        [
+            "claude", "-p",
+            "--model", MODEL,
+            "--system-prompt", SYSTEM_PROMPT,
+            "--json-schema", json.dumps(OUTPUT_SCHEMA, ensure_ascii=False),
+            "--output-format", "json",
+            "--tools", "",  # ファイル操作やコマンド実行はさせない
+            "--max-turns", "5",
+        ],
+        input=user_content,
+        capture_output=True,
+        text=True,
+        timeout=900,
     )
-
-    if response.stop_reason == "refusal":
-        raise RuntimeError(f"Claude が要約を拒否しました: {response.stop_details}")
-    if response.stop_reason == "max_tokens":
-        raise RuntimeError("出力が max_tokens で打ち切られました")
-
-    text = next(b.text for b in response.content if b.type == "text")
-    result = json.loads(text)
+    try:
+        output = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"claude -p の実行に失敗しました: {proc.stderr or proc.stdout}") from None
+    if output.get("is_error") or not output.get("structured_output"):
+        raise RuntimeError(f"claude -p がエラーを返しました: {output.get('subtype')} {output.get('result')}")
+    result = output["structured_output"]
 
     # Claude が返した id を元記事に紐付け（URL は必ず元フィードのものを使う）
     by_id = {a.id: a for a in articles}

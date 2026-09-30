@@ -23,9 +23,16 @@ GitHub Actions で動くので、サーバーは不要です。
 3. 投稿先を選ぶ（自分専用にしたい場合は、自分だけのチャンネル（例: `#ai-news`）を作るか、自分宛ての DM を選ぶ）
 4. 発行された `https://hooks.slack.com/services/...` をコピー
 
-### 2. Anthropic API キーを用意
+### 2. Claude のトークンを発行（サブスク枠で動かす）
 
-https://console.anthropic.com/ で API キーを発行します。
+Claude の Pro / Max プランの枠内で動くので、API の追加料金はかかりません。
+Claude Code が入っている PC のターミナルで以下を実行し、表示されたトークンをコピーします。
+
+```bash
+claude setup-token
+```
+
+> トークンの有効期限が切れたら、同じコマンドで再発行して Secret を更新してください。
 
 ### 3. GitHub Secrets に登録
 
@@ -33,7 +40,7 @@ https://console.anthropic.com/ で API キーを発行します。
 
 | Name | 値 |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Anthropic の API キー |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` で発行したトークン |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
 
 ### 4. 動作確認
@@ -49,7 +56,8 @@ https://console.anthropic.com/ で API キーを発行します。
 - **投稿時刻**: GitHub Actions の cron は数分〜十数分遅れることがあるため、配信の 15 分前（7:45 / 19:45）に起動 → 要約を作成 → 8:00 / 20:00 まで待ってから投稿します。混雑時は数分遅れることがあります。
 - **朝と夜で内容を変える仕組み**: 投稿した記事の URL と見出しを `posted_history.json` に記録し（GitHub Actions のキャッシュで実行間に引き継ぎ、7 日で自動削除）、次の回では投稿済みの記事を除外します。さらに直近 2 日の配信見出しを Claude に渡し、別メディアが報じた同じニュースも選ばないようにしています。
 - **リンク**: URL は Claude の出力ではなく、元の RSS のものを使います（URL の捏造を防ぐため）。
-- **コスト目安**: 1 日 2 回、数十記事分の入力なので Claude API は 1 回あたり数円〜十数円程度です。
+- **コスト**: Claude はサブスク（Pro / Max）の利用枠を使うので追加料金なし。GitHub Actions も公開リポジトリなら無料です。
+  `ANTHROPIC_API_KEY` を Secrets に登録すると API 課金が優先されるので、登録しないでください。
 
 ## カスタマイズ
 
@@ -63,8 +71,7 @@ https://console.anthropic.com/ で API キーを発行します。
 ## ローカルで試す
 
 ```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...
+pip install -r requirements.txt   # Claude Code（claude コマンド）にログイン済みであること
 python ai_news.py --dry-run          # Slack に投稿せず結果を表示
 SLACK_WEBHOOK_URL=... python ai_news.py   # 実際に投稿
 ```

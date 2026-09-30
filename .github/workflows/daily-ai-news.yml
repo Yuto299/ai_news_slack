@@ -31,7 +31,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - run: pip install -r requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          npm install -g @anthropic-ai/claude-code
 
       # 朝と夜で同じ記事を流さないよう、投稿履歴を実行間で引き継ぐ
       - name: Restore posted history
@@ -43,7 +50,8 @@ jobs:
 
       - name: Post AI news
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Claude のサブスク（Pro / Max）枠で実行。`claude setup-token` で発行したトークン
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           EDITION: ${{ github.event.schedule == '45 22 * * *' && 'morning' || github.event.schedule == '45 10 * * *' && 'evening' || inputs.edition }}
           # 手動実行時は待たずにすぐ投稿
