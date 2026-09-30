@@ -4,10 +4,10 @@
 朝と夜で同じニュースは流しません。
 
 ```
-RSS (TechCrunch / The Verge / OpenAI / Google / HN / ITmedia など)
+RSS (TechCrunch / The Verge / OpenAI / Google / HN / ITmedia / Crunchbase / BRIDGE など)
    └─ 直近24時間の記事を収集
         └─ 過去に投稿した記事を除外
-             └─ Claude が重要記事を最大8件選定 → 日本語で見出し・要約
+             └─ Claude が重要記事を最大10件選定 → 日本語で見出し・要約・起業家視点の示唆
                   （直近に配信した話題は、別メディアの記事でも選ばない）
                   └─ Slack Incoming Webhook で投稿 → 投稿履歴を保存
 ```
@@ -47,6 +47,7 @@ claude setup-token
 
 **Actions → Daily AI News to Slack → Run workflow** で手動実行すると、すぐに投稿されます
 （`edition` で朝版 / 夜版を選べます。空欄なら現在時刻から自動判定）。
+`dry_run` にチェックを入れると、Slack に投稿せず結果をログに表示するだけになります（設定変更のお試し用）。
 以降は毎日 朝 8:00 と夜 20:00 に自動で投稿されます。
 
 > ⚠️ スケジュール実行はデフォルトブランチ（`main`）上のワークフローで動きます。
@@ -64,8 +65,8 @@ claude setup-token
 | 変更したいこと | 場所 |
 | --- | --- |
 | ニュースソースの追加・削除 | `ai_news.py` の `FEEDS` |
-| 選定基準・要約のトーン | `ai_news.py` の `SYSTEM_PROMPT` |
-| 記事数 / 収集期間 | 環境変数 `MAX_ITEMS`（既定 8） / `LOOKBACK_HOURS`（既定 24） |
+| 選定基準・ジャンル配分・要約のトーン | `ai_news.py` の `SYSTEM_PROMPT` |
+| 記事数 / 収集期間 | 環境変数 `MAX_ITEMS`（既定 10） / `LOOKBACK_HOURS`（既定 24） |
 | 投稿時刻 | `.github/workflows/daily-ai-news.yml` の `cron`（2 箇所）と `ai_news.py` の `EDITIONS` |
 
 ## ローカルで試す

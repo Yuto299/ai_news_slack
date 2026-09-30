@@ -13,6 +13,10 @@ on:
         type: choice
         options: ["", morning, evening]
         default: ""
+      dry_run:
+        description: "Slack に投稿せず、結果をログに表示するだけ"
+        type: boolean
+        default: false
 
 # 投稿履歴の保存が前後の実行と競合しないよう、同時実行は 1 つに制限
 concurrency:
@@ -56,10 +60,11 @@ jobs:
           EDITION: ${{ github.event.schedule == '45 22 * * *' && 'morning' || github.event.schedule == '45 10 * * *' && 'evening' || inputs.edition }}
           # 手動実行時は待たずにすぐ投稿
           WAIT_FOR_SLOT: ${{ github.event_name == 'schedule' && '1' || '' }}
-        run: python ai_news.py
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python ai_news.py ${DRY_RUN:+--dry-run}
 
       - name: Save posted history
-        if: success() && hashFiles('posted_history.json') != ''
+        if: success() && !inputs.dry_run && hashFiles('posted_history.json') != ''
         uses: actions/cache/save@v4
         with:
           path: posted_history.json

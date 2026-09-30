@@ -10,7 +10,7 @@
   CLAUDE_CODE_OAUTH_TOKEN  `claude setup-token` で発行したトークン（Claude のサブスク枠で実行）
   SLACK_WEBHOOK_URL   Slack Incoming Webhook URL
   LOOKBACK_HOURS      収集対象の時間幅（既定 24）
-  MAX_ITEMS           投稿する記事数（既定 8）
+  MAX_ITEMS           投稿する記事数（既定 10）
   EDITION             "morning" / "evening"。未指定なら現在時刻 (JST) から自動判定
   WAIT_FOR_SLOT       "1" なら、早く起動した場合に配信時刻（8:00 / 20:00）まで待ってから投稿
   HISTORY_FILE        投稿履歴の保存先（既定 posted_history.json）
@@ -43,6 +43,11 @@ FEEDS: dict[str, str] = {
     "Hugging Face": "https://huggingface.co/blog/feed.xml",
     "Hacker News": "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT+OR+Claude+OR+Gemini&points=100",
     "ITmedia AI+": "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",
+    # ビジネス・スタートアップ系（AI 以外の記事も含むので、選定時に AI 関連に絞る）
+    "TechCrunch Startups": "https://techcrunch.com/category/startups/feed/",
+    "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
+    "Crunchbase News": "https://news.crunchbase.com/feed/",
+    "BRIDGE": "https://thebridge.jp/feed",
 }
 
 MODEL = "claude-opus-5-5"
@@ -133,19 +138,28 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-SYSTEM_PROMPT = """あなたは日本のビジネスパーソン・エンジニア向けに AI 業界ニュースをキュレーションする編集者です。
+SYSTEM_PROMPT = """あなたは AI 領域での起業を目指すエンジニア向けに、AI 業界ニュースをキュレーションする編集者です。
 与えられた記事リストから、その日に読む価値が高いものを選び、日本語で簡潔に要約してください。
+読者は技術がわかる前提で、事業機会・市場の動き・ビジネスモデルに特に関心があります。
 
 選定基準:
 - 主要 AI 企業（OpenAI, Anthropic, Google, Meta, Microsoft, NVIDIA など）の新モデル・新製品・重要発表
-- 資金調達・M&A・規制・訴訟など、ビジネスや市場に影響するニュース
+- AI スタートアップの資金調達・M&A・急成長事例・新しいビジネスモデル・価格改定・大企業の導入事例
+- 規制・訴訟など、事業環境に影響するニュース
 - 開発者が実務で使える新ツール・OSS・研究成果
 - 同じ出来事を扱う複数記事は 1 件にまとめ、最も情報量の多い記事の id を使う
-- 宣伝色が強いだけの記事や、AI と関係の薄い記事は除外
+- 宣伝色が強いだけの記事や、AI と関係の薄い記事は除外（スタートアップ系メディアには AI 以外の記事も含まれる）
+
+件数が 10 件のときのジャンル配分の目安（その日のニュース次第で ±1〜2 件は調整してよい。質の低い記事で枠を埋めない）:
+- ビジネス: 4 件（資金調達・M&A・新サービス・導入事例・市場動向。国内スタートアップの話題があれば 1 件は入れる）
+- モデル/製品: 3 件
+- 開発者向け / 研究: 2 件
+- 規制/社会: 1 件
 
 要約のルール:
 - title_ja: 日本語の見出し（40 字程度まで、固有名詞は原語のままで可）
-- summary_ja: 何が起きたか + なぜ重要か を 2〜3 文で。誇張や推測は避け、記事にある事実ベースで書く
+- summary_ja: 何が起きたか + なぜ重要か を 2〜3 文で。金額・評価額・顧客数など具体的な数字があれば入れる。誇張や推測は避け、記事にある事実ベースで書く
+- insight_ja: 起業家の視点での示唆を 1 文（例: 空いている市場、真似できる戦略、参入障壁の変化）。記事から自然に言えることがなければ空文字
 - category: "モデル/製品", "ビジネス", "規制/社会", "研究", "開発者向け" のいずれか
 - headline: その日の全体像を 1 文で（60 字程度まで）"""
 
@@ -161,12 +175,13 @@ OUTPUT_SCHEMA = {
                     "id": {"type": "integer"},
                     "title_ja": {"type": "string"},
                     "summary_ja": {"type": "string"},
+                    "insight_ja": {"type": "string"},
                     "category": {
                         "type": "string",
                         "enum": ["モデル/製品", "ビジネス", "規制/社会", "研究", "開発者向け"],
                     },
                 },
-                "required": ["id", "title_ja", "summary_ja", "category"],
+                "required": ["id", "title_ja", "summary_ja", "insight_ja", "category"],
                 "additionalProperties": False,
             },
         },
@@ -267,6 +282,8 @@ def build_blocks(digest: dict, today: datetime, edition: str) -> list[dict]:
             f"{emoji} *{i}. <{item['url']}|{_esc(item['title_ja'])}>*\n"
             f"{_esc(item['summary_ja'])}"
         )
+        if item.get("insight_ja"):
+            text += f"\n:bulb: _{_esc(item['insight_ja'])}_"
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text[:3000]}})
         blocks.append(
             {
@@ -315,7 +332,7 @@ def main() -> int:
     args = parser.parse_args()
 
     lookback = int(os.environ.get("LOOKBACK_HOURS", "24"))
-    max_items = int(os.environ.get("MAX_ITEMS", "8"))
+    max_items = int(os.environ.get("MAX_ITEMS", "10"))
     history_file = os.environ.get("HISTORY_FILE", "posted_history.json")
     edition = os.environ.get("EDITION") or detect_edition(datetime.now(JST))
     if edition not in EDITIONS:
