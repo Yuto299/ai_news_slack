@@ -20,6 +20,8 @@ MARK_ALL_SEEN = True
 MAX_ITEMS = 6
 
 JGRANTS_API = "https://api.jgrants-portal.go.jp/exp/v1/public/subsidies"
+# 対象地域: 全国対象の制度に加えて、ここに挙げた都県の制度だけを候補にする
+TARGET_PREFECTURES = ["東京都", "神奈川県", "埼玉県", "千葉県", "山梨県"]
 JGRANTS_KEYWORDS = ["創業", "起業", "スタートアップ", "新事業", "IT", "DX", "デジタル", "AI", "小規模", "販路開拓"]
 FEEDS = {"ミラサポplus": "https://mirasapo-plus.go.jp/feed/"}
 
@@ -28,7 +30,8 @@ SYSTEM_PROMPT = """あなたは、会社員エンジニアが AI・IT 領域で�
 
 選ぶ基準:
 - 創業・起業・新事業・IT/DX/AI 導入・販路開拓・人材など、小規模なスタートアップが対象になり得るもの
-- 全国対象のものを優先する。地域限定のものは、東京都・大阪府などの大都市圏、または特に条件が良いものに絞る
+- 読者の拠点は一都三県（東京都・神奈川県・埼玉県・千葉県）と山梨県。候補は全国対象か、これらの都県が対象のものに絞ってある
+- 全国対象と都県の制度を同じ基準で比べ、使える可能性が高いものを選ぶ。市区町村の制度は、その市区町村に拠点を置く必要があることを fit で明記する
 - 特定業種（農業・漁業・医療機関・運輸など）や特定設備に限られるもの、個人の生活支援、奨学金返還支援は除く
 - 募集締切が過ぎたもの・締切まで 3 日以内のものは除く
 
@@ -84,7 +87,10 @@ def _fetch_jgrants(seen: set[str]) -> list[Item]:
         for r in results:
             url = f"https://www.jgrants-portal.go.jp/subsidy/{r['id']}"
             deadline = (r.get("acceptance_end_datetime") or "")[:10]
+            area = r.get("target_area_search") or ""
             if url in seen or url in found or (deadline and deadline < today):
+                continue
+            if area and "全国" not in area and not any(p in area for p in TARGET_PREFECTURES):
                 continue
             found[url] = Item(
                 id=0,
@@ -94,7 +100,7 @@ def _fetch_jgrants(seen: set[str]) -> list[Item]:
                 extra={
                     "deadline": deadline,
                     "max_amount_yen": r.get("subsidy_max_limit"),
-                    "area": r.get("target_area_search", ""),
+                    "area": area,
                     "employees": r.get("target_number_of_employees", ""),
                 },
             )

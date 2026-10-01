@@ -10,7 +10,7 @@ GitHub Actions で動くのでサーバーは不要。Claude は Pro / Max プ�
 | `#launches` | 注目の新プロダクト 6 件と、その収益モデル・盗めるポイント | 毎日 18:00 | Product Hunt / Show HN / Launch HN |
 | `#small-biz` | 個人で再現できそうなスモールビジネス事例 5 件（信頼度ラベル付き） | 毎日 21:00 | Reddit / HN / Zenn / Qiita / note |
 | `#weekly-trends` | 1 週間で「お金と注目がどこに流れたか」のテーマ別まとめ | 毎週日曜 10:00 | `#ai-news` の 1 週間分 + 資金調達系ニュース |
-| `#subsidies` | 起業・小規模事業向けの補助金・支援制度の新着 | 毎週 月・木 9:00 | jGrants（デジタル庁）/ ミラサポplus |
+| `#subsidies` | 起業・小規模事業向けの補助金・支援制度の新着（全国 + 一都三県・山梨県） | 毎週 月・木 9:00 | jGrants（デジタル庁）/ ミラサポplus |
 
 どのチャンネルも、一度投稿したものは次の回以降で繰り返しません。
 
@@ -77,6 +77,7 @@ Webhook を登録していないチャンネルは、何もせずにスキップ
 | ソースの追加・削除 | 各ファイルの `FEEDS` |
 | 選定基準・要約のトーン・出力項目 | 各ファイルの `SYSTEM_PROMPT` / `SCHEMA` / `render` |
 | 件数 | 各ファイルの `MAX_ITEMS` |
+| 補助金の対象地域 | `bot/channels/subsidies.py` の `TARGET_PREFECTURES` |
 | 投稿時刻 | 各ファイルの `SLOTS` と `.github/workflows/<チャンネル名>.yml` の `cron` |
 | チャンネルの追加 | `bot/channels/` にファイルを追加して `bot/channels/__init__.py` に登録し、ワークフローを追加 |
 
