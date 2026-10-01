@@ -40,7 +40,7 @@ import requests
 
 JST = timezone(timedelta(hours=9))
 MODEL = "claude-opus-5-5"
-USER_AGENT = "Mozilla/5.0 (compatible; ai-news-slack/1.0; +https://github.com/Yuto299/ai_news_slack)"
+USER_AGENT = "Mozilla/5.0 (compatible; news-slack/1.0; +https://github.com/Yuto299/news_slack)"
 WEEKDAYS_JA = "月火水木金土日"
 
 

@@ -1,4 +1,4 @@
-# ai_news_slack
+# news_slack
 
 起業準備のための情報を、Claude が毎日集めて **日本語で整理** し、Slack の各チャンネルに投稿するボットです。
 GitHub Actions で動くのでサーバーは不要。Claude は Pro / Max プランのサブスク枠で動くので、API の追加料金もかかりません。
