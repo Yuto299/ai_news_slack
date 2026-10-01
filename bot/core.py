@@ -20,6 +20,7 @@
   HISTORY_FILE        履歴ファイルのパス
   SLOT                配信枠名（手動実行用。未指定なら現在時刻から判定）
   SCHEDULED           "1" なら定期実行: その枠を今日すでに投稿済みなら何もしない、早く起動したら配信時刻まで待つ
+  SCHEDULE_CRON       定期実行を起動した cron 式（github.event.schedule）。遅れて起動しても本来の枠を判定するのに使う
 """
 
 from __future__ import annotations
@@ -279,29 +280,52 @@ def _slot_dt(slot: Slot, now: datetime) -> datetime:
     return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
-def detect_slot(slots: list[Slot], now: datetime, scheduled: bool) -> Slot | None:
-    """定期実行: 配信時刻の 30 分前〜90 分後に起動した枠を返す。手動実行: 時刻が最も近い枠。"""
-    candidates = [s for s in slots if now.weekday() in s.weekdays]
+MAX_DELAY = timedelta(hours=12)  # これ以上遅れて起動した定期実行は、古くなるので投稿しない
+
+
+def _cron_fire_time(cron: str, now: datetime) -> datetime:
+    """cron 式（UTC）の「分 時」から、now 以前で直近の予定起動時刻を返す（JST）。"""
+    minute, hour = (int(x) for x in cron.split()[:2])
+    utc_now = now.astimezone(timezone.utc)
+    fire = utc_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if fire > utc_now + timedelta(minutes=5):
+        fire -= timedelta(days=1)
+    return fire.astimezone(JST)
+
+
+def detect_slot(
+    slots: list[Slot], now: datetime, scheduled: bool, cron: str = ""
+) -> tuple[Slot, datetime] | None:
+    """配信枠と、その枠の予定配信日時を返す。
+
+    定期実行: どの cron で起動したか（cron）から枠を決める。GitHub の定期実行は数時間遅れることがあるため、
+              実際の起動時刻ではなく予定の起動時刻を基準にする（予定が配信時刻の 30 分前〜90 分後の枠）。
+    手動実行: 現在時刻に最も近い枠。
+    """
+    base = _cron_fire_time(cron, now) if (scheduled and cron) else now
     if scheduled:
-        for s in candidates:
-            diff = (now - _slot_dt(s, now)).total_seconds() / 60
-            if -30 <= diff <= 90:
-                return s
+        for s in slots:
+            for day in (-1, 0, 1):
+                slot_dt = _slot_dt(s, base) + timedelta(days=day)
+                diff = (base - slot_dt).total_seconds() / 60
+                if -30 <= diff <= 90 and slot_dt.weekday() in s.weekdays:
+                    return s, slot_dt
         return None
 
     def distance(s: Slot) -> float:
         d = abs((now - _slot_dt(s, now)).total_seconds())
         return min(d, 86400 - d)
 
-    return min(candidates or slots, key=distance)
+    candidates = [s for s in slots if now.weekday() in s.weekdays] or slots
+    slot = min(candidates, key=distance)
+    return slot, _slot_dt(slot, now)
 
 
-def wait_until(slot: Slot) -> None:
+def wait_until(slot_dt: datetime) -> None:
     """起動が早すぎた場合、配信時刻 (JST) まで待つ。最大 60 分。"""
-    now = datetime.now(JST)
-    wait = (_slot_dt(slot, now) - now).total_seconds()
+    wait = (slot_dt - datetime.now(JST)).total_seconds()
     if 0 < wait <= 3600:
-        print(f"[info] {slot.time} JST まで {int(wait)} 秒待機", file=sys.stderr)
+        print(f"[info] {slot_dt:%H:%M} JST まで {int(wait)} 秒待機", file=sys.stderr)
         time.sleep(wait)
 
 
@@ -319,17 +343,24 @@ def run(channel: ModuleType, dry_run: bool) -> int:
         slot = next((s for s in channel.SLOTS if s.name == slot_name), None)
         if slot is None:
             raise ValueError(f"SLOT は {[s.name for s in channel.SLOTS]} のいずれか: {slot_name}")
+        slot_dt = _slot_dt(slot, now)
     else:
-        slot = detect_slot(channel.SLOTS, now, scheduled)
-        if slot is None:
-            print("[info] 今は配信時間帯ではないためスキップ", file=sys.stderr)
+        detected = detect_slot(channel.SLOTS, now, scheduled, os.environ.get("SCHEDULE_CRON", ""))
+        if detected is None:
+            print("[info] 配信枠に当たらない起動のためスキップ", file=sys.stderr)
             return 0
+        slot, slot_dt = detected
+    if scheduled and now - slot_dt > MAX_DELAY:
+        print(f"[warn] 予定（{slot_dt:%m/%d %H:%M}）から 12 時間以上遅れて起動したためスキップ", file=sys.stderr)
+        return 0
+    if scheduled and now - slot_dt > timedelta(minutes=30):
+        print(f"[warn] GitHub の定期実行が遅れて起動（予定 {slot_dt:%m/%d %H:%M}）", file=sys.stderr)
 
     history_file = os.environ.get("HISTORY_FILE", f"history/{channel.NAME}.json")
     history = load_history(history_file, getattr(channel, "HISTORY_DAYS", 7))
-    today = now.strftime("%Y-%m-%d")
+    today = slot_dt.strftime("%Y-%m-%d")  # 遅れて日付をまたいでも、本来の配信日の枠として扱う
     if scheduled and already_posted(history, slot, today):
-        print(f"[info] 今日の {slot.name} 枠は投稿済みのためスキップ", file=sys.stderr)
+        print(f"[info] {today} の {slot.name} 枠は投稿済みのためスキップ", file=sys.stderr)
         return 0
     print(f"[info] {channel.NAME} / {slot.name} 枠 / 履歴 {len(history)} 件", file=sys.stderr)
 
@@ -372,7 +403,7 @@ def run(channel: ModuleType, dry_run: bool) -> int:
         return 0
 
     if scheduled:
-        wait_until(slot)
+        wait_until(slot_dt)
     post_to_slack(webhook_url, f"{slot.label}", blocks)
     save_history(history_file, history + entries + [marker])
     print("[info] Slack に投稿しました", file=sys.stderr)

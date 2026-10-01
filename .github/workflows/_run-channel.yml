@@ -77,6 +77,8 @@ jobs:
           SLOT: ${{ inputs.slot }}
           # 定期実行のときだけ: 投稿済みならスキップ、早く起動したら配信時刻まで待つ
           SCHEDULED: ${{ github.event_name == 'schedule' && '1' || '' }}
+          # どの cron で起動したか。GitHub の定期実行は数時間遅れることがあるので、実際の起動時刻ではなくこれで枠を決める
+          SCHEDULE_CRON: ${{ github.event.schedule }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: python -m bot "${{ inputs.channel }}" ${DRY_RUN:+--dry-run}
 
