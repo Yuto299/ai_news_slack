@@ -1,0 +1,20 @@
+name: Check jGrants area format (temporary)
+on:
+  push:
+    branches: ["claude/**"]
+    paths: [".github/workflows/check-feeds.yml"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: python
+        run: |
+          import json, urllib.request, urllib.parse, collections
+          c = collections.Counter()
+          for kw in ["創業", "IT", "事業"]:
+              q = urllib.parse.urlencode({"keyword": kw, "sort": "created_date", "order": "DESC", "acceptance": "1"})
+              d = json.load(urllib.request.urlopen("https://api.jgrants-portal.go.jp/exp/v1/public/subsidies?" + q))
+              for r in d["result"]:
+                  c[repr(r.get("target_area_search"))] += 1
+          for k, v in c.most_common(40):
+              print("AREA", v, k)
