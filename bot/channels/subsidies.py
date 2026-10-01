@@ -10,11 +10,11 @@ import json
 import sys
 from datetime import datetime
 
-from bot.core import JST, DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, http_get, link, section
+from bot.core import DIVIDER, JST, Context, Item, Slot, context_block, esc, fetch_feeds, http_get, item_text, section
 
 NAME = "subsidies"
 WEBHOOK_ENV = "SLACK_WEBHOOK_SUBSIDIES"
-SLOTS = [Slot("biweekly", "09:00", ":classical_building: 補助金・支援制度の新着", weekdays=(0, 3))]
+SLOTS = [Slot("biweekly", "09:00", "補助金・支援制度の新着", weekdays=(0, 3))]
 HISTORY_DAYS = 400  # 募集期間が長い制度もあるので、確認済みの制度を長めに覚えておく
 MARK_ALL_SEEN = True
 MAX_ITEMS = 6
@@ -133,16 +133,15 @@ def render(digest: dict, ctx: Context) -> list[dict]:
     picked = _picked(digest, ctx)
     if not picked:
         return []
-    blocks = [ctx.header(), section(f"*{esc(digest['headline'])}*"), DIVIDER]
+    blocks = [ctx.header(), section(esc(digest["headline"])), DIVIDER]
     for i, (d, item) in enumerate(picked, 1):
-        text = (
-            f"*{i}. {link(item.url, d['name'])}*\n"
-            f":busts_in_silhouette: *対象:* {esc(d['who'])}\n"
-            f":yen: *金額:* {esc(d['amount'])}\n"
-            f":alarm_clock: *締切:* {esc(d['deadline'])}\n"
-            f":bulb: {esc(d['fit'])}"
-        )
-        blocks.append(section(text))
+        fields = [
+            ("対象", d["who"]),
+            ("金額", d["amount"]),
+            ("締切", d["deadline"]),
+            ("使い方・注意点", d["fit"]),
+        ]
+        blocks.append(section(item_text(i, item.url, d["name"], fields=fields)))
         blocks.append(context_block(esc(item.source)))
     blocks.append(context_block("申請前に、必ず公式ページで最新の要件と締切を確認してください。"))
     return blocks

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 
-from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, link, section
+from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, item_text, section
 
 NAME = "launches"
 WEBHOOK_ENV = "SLACK_WEBHOOK_LAUNCHES"
-SLOTS = [Slot("daily", "18:00", ":rocket: 今日の新プロダクト")]
+SLOTS = [Slot("daily", "18:00", "今日の新プロダクト")]
 HISTORY_DAYS = 14
 MAX_ITEMS = 6
 LOOKBACK_HOURS = 30
@@ -87,16 +87,14 @@ def render(digest: dict, ctx: Context) -> list[dict]:
     picked = _picked(digest, ctx)
     if not picked:
         return []
-    blocks = [ctx.header(), section(f"*{esc(digest['headline'])}*"), DIVIDER]
+    blocks = [ctx.header(), section(esc(digest["headline"])), DIVIDER]
     for i, (d, item) in enumerate(picked, 1):
-        text = (
-            f"*{i}. {link(item.url, d['name'])}*\n"
-            f"{esc(d['what'])}\n"
-            f":eyes: *注目点:* {esc(d['why_notable'])}\n"
-            f":moneybag: *収益モデル:* {esc(d['business_model'])}\n"
-            f":bulb: _{esc(d['takeaway'])}_"
-        )
-        blocks.append(section(text))
+        fields = [
+            ("注目点", d["why_notable"]),
+            ("収益モデル", d["business_model"]),
+            ("起業の視点", d["takeaway"]),
+        ]
+        blocks.append(section(item_text(i, item.url, d["name"], d["what"], fields)))
         blocks.append(context_block(esc(item.source)))
     return blocks
 

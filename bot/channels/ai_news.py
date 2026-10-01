@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 
-from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, link, section
+from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, item_text, section
 
 NAME = "ai-news"
 WEBHOOK_ENV = "SLACK_WEBHOOK_URL"
 SLOTS = [
-    Slot("morning", "08:00", ":sunrise: 朝のAIニュース"),
-    Slot("evening", "20:00", ":city_sunset: 夜のAIニュース"),
+    Slot("morning", "08:00", "朝のAIニュース"),
+    Slot("evening", "20:00", "夜のAIニュース"),
 ]
 HISTORY_DAYS = 8  # 週次まとめ（#weekly-trends）が 1 週間分を読むため少し長めに残す
 MAX_ITEMS = 10
@@ -88,15 +88,6 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-CATEGORY_EMOJI = {
-    "モデル/製品": ":rocket:",
-    "ビジネス": ":moneybag:",
-    "規制/社会": ":classical_building:",
-    "研究": ":microscope:",
-    "開発者向け": ":hammer_and_wrench:",
-}
-
-
 def collect(ctx: Context) -> list[Item]:
     return fetch_feeds(FEEDS, LOOKBACK_HOURS, ctx.seen_urls)
 
@@ -125,14 +116,10 @@ def render(digest: dict, ctx: Context) -> list[dict]:
     picked = _picked(digest, ctx)
     if not picked:
         return []
-    blocks = [ctx.header(), section(f"*{esc(digest['headline'])}*"), DIVIDER]
+    blocks = [ctx.header(), section(esc(digest["headline"])), DIVIDER]
     for i, (d, item) in enumerate(picked, 1):
-        emoji = CATEGORY_EMOJI.get(d["category"], ":small_blue_diamond:")
-        text = f"{emoji} *{i}. {link(item.url, d['title_ja'])}*\n{esc(d['summary_ja'])}"
-        if d.get("insight_ja"):
-            text += f"\n:bulb: _{esc(d['insight_ja'])}_"
-        blocks.append(section(text))
-        blocks.append(context_block(f"{d['category']} ・ {esc(item.source)}"))
+        blocks.append(section(item_text(i, item.url, d["title_ja"], d["summary_ja"], [("起業の視点", d["insight_ja"])])))
+        blocks.append(context_block(f"{d['category']}　|　{esc(item.source)}"))
     return blocks
 
 

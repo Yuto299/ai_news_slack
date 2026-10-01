@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 
-from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, link, section
+from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, item_text, section
 
 NAME = "pain-points"
 WEBHOOK_ENV = "SLACK_WEBHOOK_PAIN_POINTS"
-SLOTS = [Slot("daily", "12:00", ":mag: 今日の課題発見")]
+SLOTS = [Slot("daily", "12:00", "今日の課題発見")]
 HISTORY_DAYS = 14
 MAX_ITEMS = 5
 LOOKBACK_HOURS = 48
@@ -71,9 +71,6 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-STRENGTH_EMOJI = {"強": ":fire:", "中": ":thermometer:", "弱": ":seedling:"}
-
-
 def collect(ctx: Context) -> list[Item]:
     return fetch_feeds(FEEDS, LOOKBACK_HOURS, ctx.seen_urls, summary_chars=800)
 
@@ -100,18 +97,15 @@ def render(digest: dict, ctx: Context) -> list[dict]:
     picked = _picked(digest, ctx)
     if not picked:
         return []
-    blocks = [ctx.header(), section(f"*{esc(digest['headline'])}*"), DIVIDER]
+    blocks = [ctx.header(), section(esc(digest["headline"])), DIVIDER]
     for i, (d, item) in enumerate(picked, 1):
-        text = (
-            f"*{i}. {link(item.url, d['pain'])}*\n"
-            f":bust_in_silhouette: *誰が:* {esc(d['who'])}\n"
-            f":speech_balloon: *声:* {esc(d['evidence'])}\n"
-            f":toolbox: *既存の解決策:* {esc(d['existing'])}\n"
-            f":bulb: *事業にするなら:* {esc(d['opportunity'])}"
-        )
-        blocks.append(section(text))
-        emoji = STRENGTH_EMOJI.get(d["strength"], "")
-        blocks.append(context_block(f"{emoji} 需要の強さ: {d['strength']} ・ {esc(item.source)}"))
+        fields = [
+            ("誰が", d["who"]),
+            ("既存の解決策", d["existing"]),
+            ("事業にするなら", d["opportunity"]),
+        ]
+        blocks.append(section(item_text(i, item.url, d["pain"], d["evidence"], fields)))
+        blocks.append(context_block(f"需要の強さ：{d['strength']}　|　{esc(item.source)}"))
     return blocks
 
 

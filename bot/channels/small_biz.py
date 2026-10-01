@@ -6,12 +6,13 @@ SNS で見かけるような「〇〇で月 xx 万円」系の話を、真偽の
 from __future__ import annotations
 
 import json
+import re
 
-from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, link, section
+from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_feeds, item_text, section
 
 NAME = "small-biz"
 WEBHOOK_ENV = "SLACK_WEBHOOK_SMALL_BIZ"
-SLOTS = [Slot("daily", "21:00", ":seedling: スモールビジネス案")]
+SLOTS = [Slot("daily", "21:00", "スモールビジネス案")]
 HISTORY_DAYS = 14
 MAX_ITEMS = 5
 LOOKBACK_HOURS = 48
@@ -83,9 +84,6 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-CREDIBILITY_EMOJI = {"証拠あり": ":large_green_circle:", "自己申告": ":large_yellow_circle:", "要注意": ":red_circle:"}
-
-
 def collect(ctx: Context) -> list[Item]:
     return fetch_feeds(FEEDS, LOOKBACK_HOURS, ctx.seen_urls, summary_chars=800)
 
@@ -108,30 +106,33 @@ def _picked(digest: dict, ctx: Context) -> list[tuple[dict, Item]]:
     return [(d, by_id[d["id"]]) for d in digest["items"][:MAX_ITEMS] if d["id"] in by_id]
 
 
+def _steps(text: str) -> str:
+    """「1. 〜 2. 〜」を 1 ステップ 1 行にする。"""
+    parts = [p.strip() for p in re.split(r"\s*(?=(?<!\d)\d+\.\s)", text.strip()) if p.strip()]
+    if len(parts) < 2:
+        return text
+    return "\n" + "\n".join(f"　{p}" for p in parts)
+
+
 def render(digest: dict, ctx: Context) -> list[dict]:
     picked = _picked(digest, ctx)
     if not picked:
         return []
     blocks = [
         ctx.header(),
-        section(f"*{esc(digest['headline'])}*"),
-        context_block("投稿者の主張をまとめたものです。売上などの数字は検証されていません。"),
+        section(esc(digest["headline"])),
+        context_block("投稿者の主張をまとめたもので、売上などの数字は検証されていません。"),
         DIVIDER,
     ]
     for i, (d, item) in enumerate(picked, 1):
-        emoji = CREDIBILITY_EMOJI.get(d["credibility"], ":white_circle:")
-        text = (
-            f"*{i}. {link(item.url, d['name'])}*\n"
-            f"{esc(d['what'])}\n"
-            f":chart_with_upwards_trend: *売上など:* {esc(d['revenue_claim'])}\n"
-            f":footprints: *再現手順:* {esc(d['how_to'])}\n"
-            f":moneybag: *初期費用・時間:* {esc(d['cost'])}\n"
-            f":jp: *日本でやるなら:* {esc(d['japan_fit'])}"
-        )
-        blocks.append(section(text))
-        blocks.append(
-            context_block(f"{emoji} 信頼度: {d['credibility']}（{esc(d['credibility_reason'])}） ・ {esc(item.source)}")
-        )
+        fields = [
+            ("売上など", d["revenue_claim"]),
+            ("初期費用・時間", d["cost"]),
+            ("再現手順", _steps(d["how_to"])),
+            ("日本でやるなら", d["japan_fit"]),
+        ]
+        blocks.append(section(item_text(i, item.url, d["name"], d["what"], fields)))
+        blocks.append(context_block(f"信頼度：{d['credibility']}（{esc(d['credibility_reason'])}）　|　{esc(item.source)}"))
     return blocks
 
 

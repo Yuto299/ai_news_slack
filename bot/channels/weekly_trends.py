@@ -14,7 +14,7 @@ from bot.core import DIVIDER, Context, Item, Slot, context_block, esc, fetch_fee
 
 NAME = "weekly-trends"
 WEBHOOK_ENV = "SLACK_WEBHOOK_WEEKLY_TRENDS"
-SLOTS = [Slot("weekly", "10:00", ":bar_chart: 今週のAI・スタートアップ動向", weekdays=(6,))]
+SLOTS = [Slot("weekly", "10:00", "今週のAI・スタートアップ動向", weekdays=(6,))]
 HISTORY_DAYS = 60
 
 FEEDS = {
@@ -99,21 +99,22 @@ def render(digest: dict, ctx: Context) -> list[dict]:
     if not digest["themes"]:
         return []
     by_id = ctx.items_by_id
-    blocks = [ctx.header(), section(f"*{esc(digest['headline'])}*"), DIVIDER]
+    blocks = [ctx.header(), section(esc(digest["headline"])), DIVIDER]
     for i, t in enumerate(digest["themes"], 1):
-        text = (
-            f"*{i}. {esc(t['title'])}*\n"
-            f"{esc(t['what_happened'])}\n"
-            f":money_with_wings: *市場の動き:* {esc(t['signal'])}\n"
-            f":compass: *起業家として:* {esc(t['implication'])}"
-        )
+        text = "\n".join([
+            f"*{i}. {esc(t['title'])}*",
+            esc(t["what_happened"]),
+            "",
+            f"市場の動き：{esc(t['signal'])}",
+            f"起業家として：{esc(t['implication'])}",
+        ])
         blocks.append(section(text))
         refs = [by_id[n] for n in t["ids"][:3] if n in by_id]
         if refs:
-            blocks.append(context_block(" ・ ".join(link(r.url, r.title[:40]) for r in refs)))
+            blocks.append(context_block("　|　".join(link(r.url, r.title[:40]) for r in refs)))
     if digest["next_week"]:
         blocks.append(DIVIDER)
-        blocks.append(section("*:calendar: 来週の注目*\n" + "\n".join(f"• {esc(x)}" for x in digest["next_week"])))
+        blocks.append(section("*来週の注目*\n" + "\n".join(f"・{esc(x)}" for x in digest["next_week"])))
     return blocks
 
 

@@ -97,7 +97,7 @@ class Context:
 
     def header(self) -> dict:
         n = self.now
-        text = f"{self.slot.label} {n:%-m/%-d}({WEEKDAYS_JA[n.weekday()]})"
+        text = f"{self.slot.label}　{n:%-m/%-d}({WEEKDAYS_JA[n.weekday()]})"
         return {"type": "header", "text": {"type": "plain_text", "text": text}}
 
 
@@ -217,6 +217,17 @@ def context_block(text: str) -> dict:
 
 
 DIVIDER = {"type": "divider"}
+
+
+def item_text(n: int, url: str, title: str, body: str = "", fields: list[tuple[str, str]] = ()) -> str:
+    """1 件分の本文: 太字のリンク付きタイトル、本文、「ラベル：内容」の行。"""
+    lines = [f"*{n}. {link(url, title)}*"]
+    if body:
+        lines.append(esc(body))
+    if fields:
+        lines.append("")
+        lines += [f"{label}：{esc(value)}" for label, value in fields if value]
+    return "\n".join(lines)
 
 
 def post_to_slack(webhook_url: str, fallback_text: str, blocks: list[dict]) -> None:
