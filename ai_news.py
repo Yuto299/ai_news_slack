@@ -12,7 +12,8 @@
   LOOKBACK_HOURS      収集対象の時間幅（既定 24）
   MAX_ITEMS           投稿する記事数（既定 10）
   EDITION             "morning" / "evening"。未指定なら現在時刻 (JST) から自動判定
-  WAIT_FOR_SLOT       "1" なら、早く起動した場合に配信時刻（8:00 / 20:00）まで待ってから投稿
+  SCHEDULED           "1" なら定期実行として動く: その版を今日すでに投稿済みなら何もしない
+                      （予備の起動時刻との重複防止）、早く起動した場合は配信時刻（8:00 / 20:00）まで待つ
   HISTORY_FILE        投稿履歴の保存先（既定 posted_history.json）
 """
 
@@ -125,10 +126,21 @@ def load_history(path: str) -> list[dict]:
     return [h for h in history if datetime.fromisoformat(h["posted_at"]) >= cutoff]
 
 
-def save_history(path: str, history: list[dict], digest: dict) -> None:
+def already_posted(history: list[dict], edition: str, today: str) -> bool:
+    return any(h.get("edition") == edition and h.get("date") == today for h in history)
+
+
+def save_history(path: str, history: list[dict], digest: dict, edition: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    today = datetime.now(JST).strftime("%Y-%m-%d")
     history = history + [
-        {"url": item["url"], "title_ja": item["title_ja"], "posted_at": now}
+        {
+            "url": item["url"],
+            "title_ja": item["title_ja"],
+            "posted_at": now,
+            "edition": edition,
+            "date": today,
+        }
         for item in digest["items"]
     ]
     with open(path, "w", encoding="utf-8") as f:
@@ -344,6 +356,10 @@ def main() -> int:
         raise ValueError(f"EDITION は morning / evening のいずれか: {edition}")
 
     history = load_history(history_file)
+    scheduled = os.environ.get("SCHEDULED") == "1"
+    if scheduled and already_posted(history, edition, datetime.now(JST).strftime("%Y-%m-%d")):
+        print(f"[info] 今日の {edition} 版は投稿済みのためスキップ", file=sys.stderr)
+        return 0
     posted_urls = {h["url"] for h in history}
     print(f"[info] {edition} 版 / 投稿履歴 {len(history)} 件", file=sys.stderr)
 
@@ -366,10 +382,10 @@ def main() -> int:
         return 0
 
     webhook_url = os.environ["SLACK_WEBHOOK_URL"]
-    if os.environ.get("WAIT_FOR_SLOT") == "1":
+    if scheduled:
         wait_until(EDITIONS[edition]["post_at"])
     post_to_slack(webhook_url, digest, blocks)
-    save_history(history_file, history, digest)
+    save_history(history_file, history, digest, edition)
     print("[info] Slack に投稿しました", file=sys.stderr)
     return 0
 

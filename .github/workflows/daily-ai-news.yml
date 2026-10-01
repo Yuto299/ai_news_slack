@@ -2,10 +2,15 @@ name: Daily AI News to Slack
 
 on:
   schedule:
-    # 朝 8:00 JST / 夜 20:00 JST に配信。GitHub の cron は数分〜十数分遅れることがあるため
-    # 15 分早く起動し、要約を作ってから配信時刻まで待って投稿する（WAIT_FOR_SLOT）。
-    - cron: "45 22 * * *" # 07:45 JST → 朝版
-    - cron: "45 10 * * *" # 19:45 JST → 夜版
+    # 朝 8:00 JST / 夜 20:00 JST に配信。GitHub の cron は遅れたり、まれに実行自体が
+    # 飛ばされたりするため、15 分前に起動して配信時刻まで待つのに加え、予備の起動時刻を 2 つずつ置く。
+    # その版を今日すでに投稿済みなら予備の起動は何もせず終わる（SCHEDULED）。版は起動時刻から自動判定。
+    - cron: "45 22 * * *" # 07:45 JST 朝版
+    - cron: "10 23 * * *" # 08:10 JST 朝版（予備）
+    - cron: "40 23 * * *" # 08:40 JST 朝版（予備）
+    - cron: "45 10 * * *" # 19:45 JST 夜版
+    - cron: "10 11 * * *" # 20:10 JST 夜版（予備）
+    - cron: "40 11 * * *" # 20:40 JST 夜版（予備）
   workflow_dispatch:
     inputs:
       edition:
@@ -57,9 +62,9 @@ jobs:
           # Claude のサブスク（Pro / Max）枠で実行。`claude setup-token` で発行したトークン
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          EDITION: ${{ github.event.schedule == '45 22 * * *' && 'morning' || github.event.schedule == '45 10 * * *' && 'evening' || inputs.edition }}
-          # 手動実行時は待たずにすぐ投稿
-          WAIT_FOR_SLOT: ${{ github.event_name == 'schedule' && '1' || '' }}
+          EDITION: ${{ inputs.edition }}
+          # 手動実行時は待たず、投稿済みチェックもせずにすぐ投稿
+          SCHEDULED: ${{ github.event_name == 'schedule' && '1' || '' }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: python ai_news.py ${DRY_RUN:+--dry-run}
 
