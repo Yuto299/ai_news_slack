@@ -1,0 +1,23 @@
+name: "#subsidies 補助金・支援制度 (月・木 9:00)"
+
+on:
+  schedule:
+    # 配信の 15 分前に起動し、予備の起動時刻を 2 つ置く（投稿済みなら何もしない）
+    - cron: "45 23 * * 0,3" # 月・木 08:45 JST
+    - cron: "10 0 * * 1,4" # 月・木 09:10 JST（予備）
+    - cron: "40 0 * * 1,4" # 月・木 09:40 JST（予備）
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Slack に投稿せず、結果をログに表示するだけ"
+        type: boolean
+        default: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/_run-channel.yml
+    secrets: inherit
+    with:
+      channel: subsidies
+      webhook_secret: SLACK_WEBHOOK_SUBSIDIES
+      dry_run: ${{ inputs.dry_run || false }}

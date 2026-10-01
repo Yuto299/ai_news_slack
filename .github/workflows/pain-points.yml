@@ -1,0 +1,23 @@
+name: "#pain-points 課題発見 (毎日 12:00)"
+
+on:
+  schedule:
+    # 配信の 15 分前に起動し、予備の起動時刻を 2 つ置く（投稿済みなら何もしない）
+    - cron: "45 2 * * *" # 11:45 JST
+    - cron: "10 3 * * *" # 12:10 JST（予備）
+    - cron: "40 3 * * *" # 12:40 JST（予備）
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Slack に投稿せず、結果をログに表示するだけ"
+        type: boolean
+        default: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/_run-channel.yml
+    secrets: inherit
+    with:
+      channel: pain-points
+      webhook_secret: SLACK_WEBHOOK_PAIN_POINTS
+      dry_run: ${{ inputs.dry_run || false }}

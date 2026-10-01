@@ -1,10 +1,9 @@
-name: Daily AI News to Slack
+name: "#ai-news AIニュース (毎日 8:00 / 20:00)"
 
 on:
   schedule:
-    # 朝 8:00 JST / 夜 20:00 JST に配信。GitHub の cron は遅れたり、まれに実行自体が
-    # 飛ばされたりするため、15 分前に起動して配信時刻まで待つのに加え、予備の起動時刻を 2 つずつ置く。
-    # その版を今日すでに投稿済みなら予備の起動は何もせず終わる（SCHEDULED）。版は起動時刻から自動判定。
+    # GitHub の cron は遅れたり、まれに実行自体が飛ばされたりするため、
+    # 配信の 15 分前に起動して配信時刻まで待つのに加え、予備の起動時刻を 2 つずつ置く（投稿済みなら何もしない）。
     - cron: "45 22 * * *" # 07:45 JST 朝版
     - cron: "10 23 * * *" # 08:10 JST 朝版（予備）
     - cron: "40 23 * * *" # 08:40 JST 朝版（予備）
@@ -13,7 +12,7 @@ on:
     - cron: "40 11 * * *" # 20:40 JST 夜版（予備）
   workflow_dispatch:
     inputs:
-      edition:
+      slot:
         description: "配信する版（空欄なら現在時刻から自動判定）"
         type: choice
         options: ["", morning, evening]
@@ -23,54 +22,15 @@ on:
         type: boolean
         default: false
 
-# 投稿履歴の保存が前後の実行と競合しないよう、同時実行は 1 つに制限
-concurrency:
-  group: ai-news
-  cancel-in-progress: false
-
 jobs:
-  post:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          npm install -g @anthropic-ai/claude-code
-
-      # 朝と夜で同じ記事を流さないよう、投稿履歴を実行間で引き継ぐ
-      - name: Restore posted history
-        uses: actions/cache/restore@v4
-        with:
-          path: posted_history.json
-          key: posted-history-${{ github.run_id }}
-          restore-keys: posted-history-
-
-      - name: Post AI news
-        env:
-          # Claude のサブスク（Pro / Max）枠で実行。`claude setup-token` で発行したトークン
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          EDITION: ${{ inputs.edition }}
-          # 手動実行時は待たず、投稿済みチェックもせずにすぐ投稿
-          SCHEDULED: ${{ github.event_name == 'schedule' && '1' || '' }}
-          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-        run: python ai_news.py ${DRY_RUN:+--dry-run}
-
-      - name: Save posted history
-        if: success() && !inputs.dry_run && hashFiles('posted_history.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: posted_history.json
-          key: posted-history-${{ github.run_id }}
+  run:
+    uses: ./.github/workflows/_run-channel.yml
+    secrets: inherit
+    with:
+      channel: ai-news
+      webhook_secret: SLACK_WEBHOOK_URL
+      # 初期からの履歴を引き継ぐため、このチャンネルだけ旧来のファイル名・キャッシュ名を使う
+      history_file: posted_history.json
+      cache_prefix: posted-history
+      slot: ${{ inputs.slot || '' }}
+      dry_run: ${{ inputs.dry_run || false }}

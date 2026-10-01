@@ -1,0 +1,23 @@
+name: "#small-biz スモールビジネス案 (毎日 21:00)"
+
+on:
+  schedule:
+    # 配信の 15 分前に起動し、予備の起動時刻を 2 つ置く（投稿済みなら何もしない）
+    - cron: "45 11 * * *" # 20:45 JST
+    - cron: "10 12 * * *" # 21:10 JST（予備）
+    - cron: "40 12 * * *" # 21:40 JST（予備）
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Slack に投稿せず、結果をログに表示するだけ"
+        type: boolean
+        default: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/_run-channel.yml
+    secrets: inherit
+    with:
+      channel: small-biz
+      webhook_secret: SLACK_WEBHOOK_SMALL_BIZ
+      dry_run: ${{ inputs.dry_run || false }}
