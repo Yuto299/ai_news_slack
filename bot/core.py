@@ -387,6 +387,11 @@ def run(channel: ModuleType, dry_run: bool) -> int:
         if slot is None:
             raise ValueError(f"SLOT は {[s.name for s in channel.SLOTS]} のいずれか: {slot_name}")
         slot_dt = _slot_dt(slot, now)
+        diff = (now - slot_dt).total_seconds() / 60
+        if scheduled and not os.environ.get("SCHEDULE_CRON") and not -30 <= diff <= 90:
+            # 外部の cron サービスから起動された定期実行は、配信時刻の 30 分前〜90 分後だけ投稿する
+            print("[info] 配信枠に当たらない起動のためスキップ", file=sys.stderr)
+            return 0
     else:
         detected = detect_slot(channel.SLOTS, now, scheduled, os.environ.get("SCHEDULE_CRON", ""))
         if detected is None:

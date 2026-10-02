@@ -23,6 +23,10 @@ on:
       dry_run:
         type: boolean
         default: false
+      scheduled:
+        description: "外部の cron サービスから起動したときに true（定期実行として扱う）"
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -77,8 +81,9 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SLACK_WEBHOOK: ${{ secrets[inputs.webhook_secret] }}
           SLOT: ${{ inputs.slot }}
-          # 定期実行のときだけ: 投稿済みならスキップ、早く起動したら配信時刻まで待つ
-          SCHEDULED: ${{ github.event_name == 'schedule' && '1' || '' }}
+          # 定期実行（GitHub の cron か、外部の cron サービスからの起動）のときだけ:
+          # 投稿済みならスキップ、早く起動したら配信時刻まで待つ
+          SCHEDULED: ${{ (github.event_name == 'schedule' || inputs.scheduled) && '1' || '' }}
           # どの cron で起動したか。GitHub の定期実行は数時間遅れることがあるので、実際の起動時刻ではなくこれで枠を決める
           SCHEDULE_CRON: ${{ github.event.schedule }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}

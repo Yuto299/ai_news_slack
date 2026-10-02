@@ -12,6 +12,10 @@ on:
         description: "Slack に投稿せず、結果をログに表示するだけ"
         type: boolean
         default: false
+      scheduled:
+        description: "定期実行として扱う（cron-job.org から起動するとき用。手動実行ではチェック不要）"
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -23,3 +27,4 @@ jobs:
       channel: small-biz
       webhook_secret: SLACK_WEBHOOK_SMALL_BIZ
       dry_run: ${{ inputs.dry_run || false }}
+      scheduled: ${{ inputs.scheduled || false }}
