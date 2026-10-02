@@ -241,6 +241,49 @@ def post_to_slack(webhook_url: str, fallback_text: str, blocks: list[dict]) -> N
         raise RuntimeError(f"Slack 投稿失敗: {resp.status_code} {resp.text}")
 
 
+# ---------- アーカイブ（GitHub に Markdown で残す） ----------
+
+ARCHIVE_DIR = "archive"
+
+
+def _mrkdwn_to_md(text: str) -> str:
+    text = re.sub(r"<(https?://[^|>]+)\|([^>]*)>", r"[\2](\1)", text)  # <url|text> → [text](url)
+    text = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"**\1**", text)  # *太字* → **太字**
+    # &lt; などのエスケープは Markdown でもそのまま正しく表示されるので戻さない
+    return "  \n".join(text.split("\n"))  # Markdown で改行を保つ
+
+
+def blocks_to_markdown(blocks: list[dict]) -> str:
+    """Slack に投稿したブロックを、同じ内容の Markdown にする。"""
+    out = []
+    for b in blocks:
+        if b["type"] == "header":
+            out.append(f"## {b['text']['text']}")
+        elif b["type"] == "divider":
+            out.append("---")
+        elif b["type"] == "section":
+            out.append(_mrkdwn_to_md(b["text"]["text"]))
+        elif b["type"] == "context":
+            out.append("> " + _mrkdwn_to_md(b["elements"][0]["text"]))
+    return "\n\n".join(out) + "\n"
+
+
+def archive_path(channel_name: str, date: str) -> str:
+    return os.path.join(ARCHIVE_DIR, channel_name, date[:7], f"{date}.md")
+
+
+def append_archive(channel_name: str, date: str, markdown: str) -> str:
+    """その日のファイルに追記する（同じ日に複数回配信するチャンネルは 1 ファイルにまとまる）。"""
+    path = archive_path(channel_name, date)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    exists = os.path.exists(path)
+    with open(path, "a", encoding="utf-8") as f:
+        if exists:
+            f.write("\n")
+        f.write(markdown)
+    return path
+
+
 # ---------- 履歴・配信枠 ----------
 
 def _parse_ts(s: str) -> datetime:
@@ -406,5 +449,7 @@ def run(channel: ModuleType, dry_run: bool) -> int:
         wait_until(slot_dt)
     post_to_slack(webhook_url, f"{slot.label}", blocks)
     save_history(history_file, history + entries + [marker])
+    path = append_archive(channel.NAME, today, blocks_to_markdown(blocks))
+    print(f"[info] {path} に保存しました", file=sys.stderr)
     print("[info] Slack に投稿しました", file=sys.stderr)
     return 0

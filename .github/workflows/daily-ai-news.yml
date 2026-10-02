@@ -24,6 +24,8 @@ on:
 
 jobs:
   run:
+    permissions:
+      contents: write  # 投稿内容を archive/ にコミットするため
     uses: ./.github/workflows/_run-channel.yml
     secrets: inherit
     with:

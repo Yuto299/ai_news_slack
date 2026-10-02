@@ -28,6 +28,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write  # 投稿内容を archive/ にコミットするため
     # 履歴の保存が前後の実行と競合しないよう、チャンネルごとに同時実行は 1 つ
     concurrency:
       group: bot-${{ inputs.channel }}
@@ -88,3 +90,19 @@ jobs:
         with:
           path: ${{ env.HISTORY_FILE }}
           key: ${{ env.CACHE_PREFIX }}-${{ github.run_id }}
+
+      # Slack の無料プランは古い投稿が見られなくなるので、投稿した内容を Markdown でリポジトリに残す
+      - name: Commit archive
+        if: success() && !inputs.dry_run && hashFiles('archive/**') != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add archive
+          git diff --cached --quiet && exit 0
+          git commit -m "archive: ${{ inputs.channel }} $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')"
+          # 他のチャンネルと同時にコミットすることがあるので、取り込み直して再試行する
+          for i in 1 2 3 4 5; do
+            git pull --rebase -q origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
